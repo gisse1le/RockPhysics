@@ -299,6 +299,132 @@ def generate_synthetic_well(well_name, n_samples, depth_start, depth_step, litho
 
 
 
+import tkinter as tk
+from tkinter import messagebox, filedialog
+import pandas as pd
 
 
-#software enabling user to input data and view results
+def calculate_model():
+    """Read the inputs, run the rock-physics model, and display the results."""
+    try:
+        vsh = float(shale_entry.get())
+        vsand = float(sand_entry.get())
+        vcarb = float(carbonate_entry.get())
+        porosity = float(porosity_entry.get())
+        water = float(water_entry.get())
+        pressure = float(pressure_entry.get())
+
+        if not np.isclose(vsh + vsand + vcarb, 1.0):
+            raise ValueError("The shale, sand, and carbonate fractions must add up to 1.")
+        if min(vsh, vsand, vcarb) < 0 or max(vsh, vsand, vcarb) > 1:
+            raise ValueError("Mineral fractions must be between 0 and 1.")
+        if not 0 <= porosity < 1:
+            raise ValueError("Porosity must be between 0 and 1.")
+        if not 0 <= water <= 1:
+            raise ValueError("Water saturation must be between 0 and 1.")
+        if pressure <= 0:
+            raise ValueError("Pressure must be greater than 0.")
+
+        result = rock_physics_forward_model(
+            vsh, vsand, vcarb, porosity, water, pressure
+        )
+
+        output = (
+            f"P-wave velocity (Vp): {result['Vp']:.3f} km/s\\n"
+            f"S-wave velocity (Vs): {result['Vs']:.3f} km/s\\n"
+            f"Bulk density: {result['rho']:.3f} g/cc\\n"
+            f"Solid bulk modulus (Ks): {result['Ks']:.3f} GPa\\n"
+            f"Solid shear modulus (Mus): {result['mus']:.3f} GPa\\n"
+            f"Dry-frame bulk modulus: {result['K_fr']:.3f} GPa\\n"
+            f"Dry-frame shear modulus: {result['Mu_fr']:.3f} GPa\\n"
+            f"Saturated bulk modulus: {result['K_sat']:.3f} GPa"
+        )
+
+        results_box.config(state="normal")
+        results_box.delete("1.0", tk.END)
+        results_box.insert(tk.END, output)
+        results_box.config(state="disabled")
+
+    except ValueError as error:
+        messagebox.showerror("Check your inputs", str(error))
+    except Exception as error:
+        messagebox.showerror("Model error", str(error))
+
+
+def save_synthetic_well():
+    """Create one synthetic well and let the user save it as a CSV file."""
+    filename = filedialog.asksaveasfilename(
+        title="Save synthetic well",
+        defaultextension=".csv",
+        filetypes=[("CSV files", "*.csv")],
+        initialfile="synthetic_well.csv"
+    )
+    if not filename:
+        return
+
+    try:
+        well = generate_synthetic_well(
+            well_name="SYN01",
+            n_samples=100,
+            depth_start=3000,
+            depth_step=0.5,
+            litho_character="mixed",
+            seed=2024
+        )
+
+        columns = ["DEPTH", "VSH", "VSAND", "VCARB", "POR",
+                   "SW", "PD", "VP", "VS", "RHO"]
+        data = pd.DataFrame({column: well[column] for column in columns})
+        data.to_csv(filename, index=False)
+        messagebox.showinfo("Saved", "The synthetic well was saved successfully.")
+
+    except Exception as error:
+        messagebox.showerror("Export error", str(error))
+
+
+# Create the main window.
+window = tk.Tk()
+window.title("Rock Physics Model")
+window.geometry("470x570")
+
+tk.Label(window, text="Rock Physics Calculator",
+         font=("Arial", 18, "bold")).pack(pady=12)
+
+# Input fields and their starting values.
+input_frame = tk.Frame(window)
+input_frame.pack(pady=5)
+
+def add_input(label, default):
+    row = tk.Frame(input_frame)
+    row.pack(fill="x", pady=4)
+    tk.Label(row, text=label, width=27, anchor="w").pack(side="left")
+    entry = tk.Entry(row, width=12)
+    entry.insert(0, str(default))
+    entry.pack(side="left")
+    return entry
+
+
+shale_entry = add_input("Shale fraction (VSH):", 0.30)
+sand_entry = add_input("Sand fraction (VSAND):", 0.60)
+carbonate_entry = add_input("Carbonate fraction (VCARB):", 0.10)
+porosity_entry = add_input("Porosity:", 0.22)
+water_entry = add_input("Water saturation:", 0.70)
+pressure_entry = add_input("Pressure (MPa):", 28)
+
+tk.Button(window, text="Calculate Rock Properties",
+          command=calculate_model, width=25).pack(pady=12)
+
+tk.Label(window, text="Results", font=("Arial", 12, "bold")).pack()
+results_box = tk.Text(window, width=48, height=11, state="disabled")
+results_box.pack(padx=12, pady=6)
+
+tk.Button(window, text="Generate and Save Synthetic Well CSV",
+          command=save_synthetic_well, width=34).pack(pady=12)
+
+tk.Label(
+    window,
+    text="Make sure the three mineral fractions add up to 1.",
+    font=("Arial", 9)
+).pack(pady=4)
+
+window.mainloop()
